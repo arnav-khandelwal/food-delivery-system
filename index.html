@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Delivery System</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <h1>Delivery System Dashboard</h1>
+        
+        <div class="dashboard">
+            <div class="panel">
+                <h2>Locations</h2>
+                <div id="locations-list" class="list"></div>
+                
+                <h3>Add New Location</h3>
+                <form id="add-location-form" class="form">
+                    <input type="number" id="loc-id" placeholder="ID" required>
+                    <input type="text" id="loc-name" placeholder="Name" required>
+                    <input type="number" id="loc-x" placeholder="X Coordinate" step="0.1" required>
+                    <input type="number" id="loc-y" placeholder="Y Coordinate" step="0.1" required>
+                    <button type="submit">Add Location</button>
+                </form>
+            </div>
+            
+            <div class="panel">
+                <h2>Orders</h2>
+                <div id="orders-list" class="list"></div>
+                
+                <h3>Place New Order</h3>
+                <form id="place-order-form" class="form">
+                    <select id="restaurant-id" required>
+                        <option value="">Select Restaurant</option>
+                    </select>
+                    <select id="customer-location" required>
+                        <option value="">Select Customer Location</option>
+                    </select>
+                    <button type="submit">Place Order</button>
+                </form>
+            </div>
+            
+            <div class="panel">
+                <h2>Drivers</h2>
+                <div id="drivers-list" class="list"></div>
+                
+                <h3>Add New Driver</h3>
+                <form id="add-driver-form" class="form">
+                    <input type="number" id="driver-speed" placeholder="Speed" step="0.1" min="0.1" required>
+                    <button type="submit">Add Driver</button>
+                </form>
+            </div>
+        </div>
+        
+        <div class="route-panel">
+            <h2>Route Planning</h2>
+            <div id="route-result" class="route-result"></div>
+            
+            <form id="find-route-form" class="form">
+                <select id="route-start" required>
+                    <option value="">Start Location</option>
+                </select>
+                <select id="route-end" required>
+                    <option value="">End Location</option>
+                </select>
+                <button type="submit">Find Shortest Path</button>
+            </form>
+        </div>
+    </div>
+    
+    <script src="script.js"></script>
+</body>
+</html>
