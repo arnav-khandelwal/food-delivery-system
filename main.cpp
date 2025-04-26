@@ -497,6 +497,91 @@ std::vector<Order> getAllOrders() {
     return orders;
 }
     
+
+    // Add edge between two locations with given distance
+void addEdge(int source, int destination, double distance, double trafficFactor = 1.0) {
+    sqlite3_stmt* stmt;
+    std::string sql = "INSERT OR REPLACE INTO edges (source, destination, distance, traffic_factor) "
+                      "VALUES (?, ?, ?, ?)";
+    
+    if (sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK) {
+        std::cerr << "Failed to prepare statement: " << sqlite3_errmsg(db) << std::endl;
+        return;
+    }
+    
+    sqlite3_bind_int(stmt, 1, source);
+    sqlite3_bind_int(stmt, 2, destination);
+    sqlite3_bind_double(stmt, 3, distance);
+    sqlite3_bind_double(stmt, 4, trafficFactor);
+    
+    if (sqlite3_step(stmt) != SQLITE_DONE) {
+        std::cerr << "Failed to add edge: " << sqlite3_errmsg(db) << std::endl;
+    }
+    
+    sqlite3_finalize(stmt);
+}
+
+// Get all edges
+std::vector<std::tuple<int, int, double, double>> getAllEdges() {
+    std::vector<std::tuple<int, int, double, double>> edges;
+    sqlite3_stmt* stmt;
+    std::string sql = "SELECT source, destination, distance, traffic_factor FROM edges";
+    
+    if (sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK) {
+        std::cerr << "Failed to prepare statement: " << sqlite3_errmsg(db) << std::endl;
+        return edges;
+    }
+    
+    while (sqlite3_step(stmt) == SQLITE_ROW) {
+        int source = sqlite3_column_int(stmt, 0);
+        int destination = sqlite3_column_int(stmt, 1);
+        double distance = sqlite3_column_double(stmt, 2);
+        double trafficFactor = sqlite3_column_double(stmt, 3);
+        edges.push_back(std::make_tuple(source, destination, distance, trafficFactor));
+    }
+    
+    sqlite3_finalize(stmt);
+    return edges;
+}
+
+// Get JSON representation of edges
+std::string edgesToJson() {
+    std::ostringstream json;
+    json << "[";
+    auto edges = getAllEdges();
+    for (size_t i = 0; i < edges.size(); ++i) {
+        if (i > 0) json << ",";
+        json << "{\"source\":" << std::get<0>(edges[i]) 
+             << ",\"destination\":" << std::get<1>(edges[i])
+             << ",\"distance\":" << std::get<2>(edges[i])
+             << ",\"trafficFactor\":" << std::get<3>(edges[i]) << "}";
+    }
+    json << "]";
+    return json.str();
+}
+
+    // Update traffic on an edge
+    void updateEdgeTraffic(int source, int destination, double additionalTraffic) {
+        sqlite3_stmt* stmt;
+        std::string sql = "UPDATE edges SET traffic_factor = traffic_factor + ? "
+                        "WHERE source = ? AND destination = ?";
+        
+        if (sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK) {
+            std::cerr << "Failed to prepare statement: " << sqlite3_errmsg(db) << std::endl;
+            return;
+        }
+        
+        sqlite3_bind_double(stmt, 1, additionalTraffic);
+        sqlite3_bind_int(stmt, 2, source);
+        sqlite3_bind_int(stmt, 3, destination);
+        
+        if (sqlite3_step(stmt) != SQLITE_DONE) {
+            std::cerr << "Failed to update edge traffic: " << sqlite3_errmsg(db) << std::endl;
+        }
+        
+        sqlite3_finalize(stmt);
+    }
+
     
     // Driver management
     int addDriver(double speed, int startLocation = -1) {
@@ -596,9 +681,8 @@ std::vector<Order> getAllOrders() {
         return drivers;
     }
     
-    // Route planning - find shortest path between two locations
     std::vector<int> findShortestPath(int start, int end) {
-        // We'll use Dijkstra's algorithm
+        // Uses Dijkstra's algorithm to find shortest path between two locations
         std::map<int, double> distances;
         std::map<int, int> previous;
         std::priority_queue<std::pair<double, int>, std::vector<std::pair<double, int>>, std::greater<>> pq;
@@ -646,21 +730,6 @@ std::vector<Order> getAllOrders() {
             }
             
             sqlite3_finalize(stmt);
-            
-            // If no edges are defined, calculate direct distance
-            if (previous.find(end) == previous.end() && current != end) {
-                for (const auto& loc : locations) {
-                    if (loc.id != current) {
-                        // Use Euclidean distance as fallback
-                        double directDist = calculateDistance(current, loc.id);
-                        if (distances[current] + directDist < distances[loc.id]) {
-                            distances[loc.id] = distances[current] + directDist;
-                            previous[loc.id] = current;
-                            pq.push({distances[loc.id], loc.id});
-                        }
-                    }
-                }
-            }
         }
         
         // Reconstruct path
@@ -929,6 +998,19 @@ int assignDriverToOrder(int orderId) {
     updateOrderStatus(orderId, "Pending");
     return -1;
 }
+
+
+// Update traffic on a route
+void updateTrafficOnRoute(const std::vector<int>& route, double trafficIncrement = 0.1) {
+    if (route.size() < 2) {
+        return; // Need at least two locations to have a route
+    }
+    
+    for (size_t i = 0; i < route.size() - 1; i++) {
+        updateEdgeTraffic(route[i], route[i+1], trafficIncrement);
+    }
+}
+
 
 // Complete an order
 // Replace the completeOrder method:
@@ -1465,6 +1547,48 @@ else if (path == "/api/orders/complete" && method == "POST") {
                "Content-Length: " + std::to_string(error.length()) + "\r\n"
                "\r\n"
                + error;
+    }
+}
+else if (path == "/api/edges") {
+    if (method == "GET") {
+        std::string json = system.edgesToJson();
+        std::ostringstream response;
+        response << "HTTP/1.1 200 OK\r\n"
+                 << corsHeaders
+                 << "Content-Type: application/json\r\n"
+                 << "Content-Length: " << json.length() << "\r\n"
+                 << "\r\n"
+                 << json;
+        return response.str();
+    } else if (method == "POST") {
+        try {
+            auto json = system.parseJson(body);
+            int source = std::stoi(json["source"]);
+            int destination = std::stoi(json["destination"]);
+            double distance = std::stod(json["distance"]);
+            double trafficFactor = 1.0; // Default traffic factor
+            
+            if (json.find("trafficFactor") != json.end()) {
+                trafficFactor = std::stod(json["trafficFactor"]);
+            }
+            
+            system.addEdge(source, destination, distance, trafficFactor);
+            
+            return "HTTP/1.1 201 Created\r\n"
+                   + corsHeaders +
+                   "Content-Type: application/json\r\n"
+                   "Content-Length: 2\r\n"
+                   "\r\n"
+                   "{}";
+        } catch (const std::exception& e) {
+            std::string error = "{\"error\":\"" + std::string(e.what()) + "\"}";
+            return "HTTP/1.1 400 Bad Request\r\n"
+                   + corsHeaders +
+                   "Content-Type: application/json\r\n"
+                   "Content-Length: " + std::to_string(error.length()) + "\r\n"
+                   "\r\n"
+                   + error;
+        }
     }
 }
 else if (path.find("/api/drivers/route") == 0 && method == "GET") {

@@ -63,3 +63,4 @@ logs/
 
 # Dependencies
 vcpkg_installed/
+vcpkg/

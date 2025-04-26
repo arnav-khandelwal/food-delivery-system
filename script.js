@@ -4,6 +4,58 @@ class DeliveryUI {
     constructor() {
         this.initEventListeners();
         this.loadInitialData();
+        this.updateEdges = async function() {
+            try {
+                const edges = await this.fetchJson(`${API_BASE}/edges`);
+                this.renderEdges(edges);
+            } catch (error) {
+                console.error("Failed to load edges:", error);
+            }
+        }
+        
+        this.renderEdges = function(edges) {
+            const edgesList = document.getElementById('edges-list');
+            
+            this.fetchJson(`${API_BASE}/locations`)
+                .then(locations => {
+                    const locationMap = {};
+                    locations.forEach(loc => {
+                        locationMap[loc.id] = loc.name;
+                    });
+                    
+                    edgesList.innerHTML = edges.length ? edges.map(edge => `
+                        <div class="item">
+                            <strong>Road:</strong> ${locationMap[edge.source] || edge.source} → ${locationMap[edge.destination] || edge.destination}<br>
+                            Distance: ${edge.distance.toFixed(2)} units<br>
+                            Traffic: ${edge.trafficFactor.toFixed(2)}
+                        </div>
+                    `).join('') : '<p>No roads added yet</p>';
+                })
+                .catch(err => {
+                    console.error('Error fetching locations for edge rendering:', err);
+                });
+        }
+        
+        this.addEdge = async function() {
+            const source = parseInt(document.getElementById('edge-source').value);
+            const destination = parseInt(document.getElementById('edge-destination').value);
+            const distance = parseFloat(document.getElementById('edge-distance').value);
+            const trafficFactorElem = document.getElementById('edge-traffic');
+            const trafficFactor = trafficFactorElem.value ? parseFloat(trafficFactorElem.value) : 1.0;
+        
+            try {
+                await this.fetchJson(`${API_BASE}/edges`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ source, destination, distance, trafficFactor })
+                });
+                alert('Road added successfully!');
+                this.updateEdges();
+                document.getElementById('add-edge-form').reset();
+            } catch (error) {
+                alert(`Error: ${error.message}`);
+            }
+        }
     }
 
     initEventListeners() {
@@ -26,13 +78,29 @@ class DeliveryUI {
             e.preventDefault();
             this.findRoute();
         });
+
+        document.getElementById('add-edge-form').addEventListener('submit', (e) => {
+            e.preventDefault();
+            this.addEdge();
+        });
+        
+        document.getElementById('edge-source').addEventListener('change', () => {
+            this.updateEdgeDistance();
+        });
+        
+        document.getElementById('edge-destination').addEventListener('change', () => {
+            this.updateEdgeDistance();
+        });
+
     }
 
     async loadInitialData() {
         await this.updateLocations();
-        await this.updateOrders();
-        await this.updateDrivers();
+    await this.updateEdges();
+    await this.updateOrders();
+    await this.updateDrivers();
     }
+
 
     async fetchJson(url, options = {}) {
         try {
@@ -65,6 +133,33 @@ class DeliveryUI {
             document.getElementById('add-location-form').reset();
         } catch (error) {
             alert(`Error: ${error.message}`);
+        }
+    }
+
+    updateEdgeDistance() {
+        const sourceId = document.getElementById('edge-source').value;
+        const destId = document.getElementById('edge-destination').value;
+        
+        // Only calculate if both source and destination are selected
+        if (sourceId && destId) {
+            // Find the location objects
+            this.fetchJson(`${API_BASE}/locations`)
+                .then(locations => {
+                    const source = locations.find(loc => loc.id == sourceId);
+                    const dest = locations.find(loc => loc.id == destId);
+                    
+                    if (source && dest) {
+                        // Calculate the distance
+                        const distance = this.calculateDistance(
+                            source.x, source.y, 
+                            dest.x, dest.y
+                        );
+                        
+                        // Round to 1 decimal place and set the value
+                        document.getElementById('edge-distance').value = distance.toFixed(1);
+                    }
+                })
+                .catch(error => console.error('Error calculating distance:', error));
         }
     }
 
@@ -176,6 +271,10 @@ class DeliveryUI {
         }
     }
 
+    calculateDistance(x1, y1, x2, y2) {
+        return Math.sqrt(Math.pow(x2 - x1, 2) + Math.pow(y2 - y1, 2));
+    }
+
     renderLocations(locations) {
         const locationsList = document.getElementById('locations-list');
         locationsList.innerHTML = locations.length ? locations.map(loc => `
@@ -198,6 +297,10 @@ class DeliveryUI {
             '<option value="">Start Location</option>' + locationOptions;
         document.getElementById('route-end').innerHTML = 
             '<option value="">End Location</option>' + locationOptions;
+        document.getElementById('edge-source').innerHTML = 
+            '<option value="">Select Source Location</option>' + locationOptions;
+        document.getElementById('edge-destination').innerHTML = 
+            '<option value="">Select Destination Location</option>' + locationOptions;
     }
 
     renderOrders(orders) {
